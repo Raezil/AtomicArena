@@ -1,3 +1,3 @@
-module github.com/Raezil/AtomicArena
+module github.com/Raezil/atomicarena
 
 go 1.22.2
