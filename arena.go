@@ -9,7 +9,7 @@ import (
 // Safe for concurrent use.
 type AtomicArena[T any] struct {
 	mu      sync.Mutex
-	buf     []T
+	buf     []atomic.Pointer[T]
 	size    uint64    // buffer length
 	counter uint64    // ever-growing allocation counter
 	_       [8]uint64 // padding to avoid false sharing
@@ -21,8 +21,9 @@ func NewAtomicArena[T any](size int) *AtomicArena[T] {
 	if size <= 0 {
 		panic("size must be > 0")
 	}
+	buf := make([]atomic.Pointer[T], size)
 	return &AtomicArena[T]{
-		buf:  make([]T, size),
+		buf:  buf,
 		size: uint64(size),
 		mu:   sync.Mutex{},
 	}
@@ -31,33 +32,27 @@ func NewAtomicArena[T any](size int) *AtomicArena[T] {
 // Alloc atomically grabs the next slot, overwrites it with val,
 // and returns a pointer to an independent copy of that slot.
 func (a *AtomicArena[T]) Alloc(val T) *T {
-	a.mu.Lock()
 	idx := atomic.AddUint64(&a.counter, 1) - 1
 	slot := idx % a.size
-	// store in ring buffer for PtrAt peeks
-	a.buf[slot] = val
-	// return a unique pointer to the value to avoid overwrites
+
+	// copy value and store atomically in the buffer
 	ptr := new(T)
 	*ptr = val
-	a.mu.Unlock()
-	return ptr
+	a.buf[slot].Store(ptr)
+
+	// return independent copy
+	out := new(T)
+	*out = val
+	return out
 }
 
 func (a *AtomicArena[T]) Reset() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	// Clear the bump‐pointer so allocations start at 0 again.
 	atomic.StoreUint64(&a.counter, 0)
-
-	// Zero out every slot in the buffer.
-	var zero T
 	for i := range a.buf {
-		a.buf[i] = zero
+		a.buf[i].Store(nil)
 	}
 }
 
-// PtrAt lets you peek at element i mod size.
 func (a *AtomicArena[T]) PtrAt(i uint64) *T {
-	return &a.buf[i%a.size]
+	return a.buf[i%a.size].Load()
 }
