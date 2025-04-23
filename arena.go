@@ -43,6 +43,20 @@ func (a *AtomicArena[T]) Alloc(val T) *T {
 	return ptr
 }
 
+func (a *AtomicArena[T]) Reset() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Clear the bump‐pointer so allocations start at 0 again.
+	atomic.StoreUint64(&a.counter, 0)
+
+	// Zero out every slot in the buffer.
+	var zero T
+	for i := range a.buf {
+		a.buf[i] = zero
+	}
+}
+
 // PtrAt lets you peek at element i mod size.
 func (a *AtomicArena[T]) PtrAt(i uint64) *T {
 	return &a.buf[i%a.size]
