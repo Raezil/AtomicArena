@@ -1,25 +1,12 @@
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/eaf20af4-1108-4376-a781-1258c4a7b7fc">
-</p>
+# AtomicArena
 
-# atomicArena
-
-atomicArena` is a high-performance, concurrent-safe, fixed-size ring allocator for Go generics. It provides a simple API to allocate values in a ring buffer with minimal locking and low garbage collection overhead.
-
-## Features
-
-- **Generic**: Works with any type `T` using Go 1.18+ generics
-- **Fixed-size ring**: Bump-pointer allocation into a circular buffer of predefined capacity
-- **Concurrent-safe**: Internal mutex and atomic counter ensure thread-safe operations
-- **Low GC overhead**: `Alloc` returns a fresh pointer to a copy of the value, avoiding reuse conflicts
+`AtomicArena[T]` is a fixed-size, bump-pointer ring allocator in Go, safe for concurrent use. It stores elements in a circular buffer and returns unique pointers to newly allocated values, avoiding data races.
 
 ## Installation
 
-```bash
-go get github.com/yourusername/atomicArena
+```sh
+go get github.com/Raezil/AtomicArena
 ```
-
-Replace `github.com/yourusername/atomicArena` with the import path for your module.
 
 ## Usage
 
@@ -28,47 +15,66 @@ package main
 
 import (
     "fmt"
-    "github.com/yourusername/atomicArena"
+    "github.com/Raezil/AtomicArena"
 )
 
+type Item struct {
+    Value int
+}
+
 func main() {
-    // Create an arena of 1024 slots for int values
-    arena := atomicArena.NewAtomicArena[int](1024)
+    // Create an arena with 100 slots
+    arena := atomicarena.NewAtomicArena[Item](100)
 
-    // Allocate a value; Alloc returns a pointer to an independent copy
-    ptr := arena.Alloc(42)
-    fmt.Println("Allocated value:", *ptr)
+    // Allocate a new item
+    ptr := arena.Alloc(Item{Value: 42})
+    fmt.Println("Allocated value:", ptr.Value)
 
-    // Peek at the slot at index 0 (mod 1024)
-    old := arena.PtrAt(0)
-    fmt.Println("Value in ring at index 0:", *old)
+    // Peek at a recent slot (e.g., first allocation)
+    peek := arena.PtrAt(0)
+    fmt.Println("Peeked value:", peek.Value)
+
+    // Reset the arena
+    arena.Reset()
+    fmt.Println("After reset, peek at slot 0:", arena.PtrAt(0)) // zero value
 }
 ```
 
-## API Reference
+## API
 
 ### `func NewAtomicArena[T any](size int) *AtomicArena[T]`
 
-- **Description**: Creates a new `AtomicArena` with exactly `size` slots.
-- **Parameters**:
-  - `size int`: Number of slots in the ring. Must be > 0.
-- **Panics**: If `size <= 0`.
-- **Returns**: A pointer to an `AtomicArena[T]`.
+Creates a new ring arena of the given size (must be > 0). Panics otherwise.
 
 ### `func (a *AtomicArena[T]) Alloc(val T) *T`
 
-- **Description**: Atomically grabs the next slot in the ring, writes `val` into the buffer, and returns a pointer to an independent copy of `val`.
-- **Parameters**:
-  - `val T`: The value to allocate.
-- **Returns**: `*T` pointer to the allocated copy.
+Atomically allocates the next slot, overwrites it with `val`, and returns a pointer to an independent copy of that value.
 
 ### `func (a *AtomicArena[T]) PtrAt(i uint64) *T`
 
-- **Description**: Retrieves a pointer to the value stored in the ring at index `i mod size` without synchronization.
-- **Parameters**:
-  - `i uint64`: The index to peek at. Wrap-around is handled via modulo.
-- **Returns**: `*T` pointer to the value in the ring buffer.
+Returns a pointer to the element at index `i mod size` in the ring buffer, allowing you to peek at past allocations.
 
-## Concurrency
+### `func (a *AtomicArena[T]) Reset()`
 
-`AtomicArena` uses an internal `sync.Mutex` to guard concurrent allocations and an atomic counter to advance the bump pointer. While `Alloc` is safe for concurrent use, `PtrAt` is not synchronized and should be used when occasional race conditions on peeks are acceptable.
+Clears the arena back to its initial state:
+
+- **Locks** the arena to prevent races with concurrent `Alloc` or `PtrAt` calls.
+- **Resets** the internal allocation counter to zero.
+- **Zeroes** out every slot in the buffer.
+
+```go
+func (a *AtomicArena[T]) Reset() {
+    a.mu.Lock()
+    defer a.mu.Unlock()
+
+    // Reset allocation counter
+    atomic.StoreUint64(&a.counter, 0)
+
+    // Zero out buffer
+    var zero T
+    for i := range a.buf {
+        a.buf[i] = zero
+    }
+}
+```
+
