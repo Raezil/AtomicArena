@@ -1,114 +1,278 @@
 package atomicarena
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 )
 
-// TestNewAtomicRingArenaPanics ensures that creating an arena with non-positive size panics.
-func TestNewAtomicRingArenaPanics(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("Expected panic for size <= 0, but no panic occurred")
-		}
-	}()
-	_ = NewAtomicArena[int](0)
-}
-
-// TestAllocAndPtrAt covers basic allocation, pointer uniqueness, and ring wrap-around.
-func TestAllocAndPtrAt(t *testing.T) {
-	arena := NewAtomicArena[string](2)
-
-	// First allocation
-	p1 := arena.Alloc("first")
-	if *p1 != "first" {
-		t.Errorf("Alloc returned %q; want %q", *p1, "first")
-	}
-	// The buffer slot 0 should now hold "first"
-	buf0 := arena.PtrAt(0)
-	if *buf0 != "first" {
-		t.Errorf("PtrAt(0) = %q; want %q", *buf0, "first")
+func TestNewAtomicArena(t *testing.T) {
+	tests := []struct {
+		name    string
+		size    int
+		wantErr bool
+	}{
+		{"valid size", 10, false},
+		{"zero size", 0, true},
+		{"negative size", -5, true},
 	}
 
-	// Second allocation
-	p2 := arena.Alloc("second")
-	if *p2 != "second" {
-		t.Errorf("Alloc returned %q; want %q", *p2, "second")
-	}
-	// The buffer slot 1 should now hold "second"
-	buf1 := arena.PtrAt(1)
-	if *buf1 != "second" {
-		t.Errorf("PtrAt(1) = %q; want %q", *buf1, "second")
-	}
-
-	// Third allocation wraps around to slot 0
-	p3 := arena.Alloc("third")
-	if *p3 != "third" {
-		t.Errorf("Alloc returned %q; want %q", *p3, "third")
-	}
-	bufWrap := arena.PtrAt(2)
-	if *bufWrap != "third" {
-		t.Errorf("PtrAt(2) = %q; want %q", *bufWrap, "third")
-	}
-
-	// Ensure Alloc returns independent pointers
-	if p1 == buf0 {
-		t.Errorf("Alloc pointer and buffer pointer should be different")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			arena, err := NewAtomicArena[int](tt.size)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("NewAtomicArena() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && arena == nil {
+				t.Errorf("NewAtomicArena() returned nil arena without error")
+			}
+			if !tt.wantErr && arena.size != uint64(tt.size) {
+				t.Errorf("NewAtomicArena() incorrect size, got %v, want %v", arena.size, tt.size)
+			}
+		})
 	}
 }
 
-// TestConcurrentAlloc verifies concurrent allocations produce correct values and unique pointers.
-func TestConcurrentAlloc(t *testing.T) {
-	const N = 1000
-	arena := NewAtomicArena[int](N)
-	var wg sync.WaitGroup
-	results := make([]*int, N)
-	wg.Add(N)
-
-	for i := 0; i < N; i++ {
-		go func(i int) {
-			defer wg.Done()
-			p := arena.Alloc(i)
-			results[i] = p
-		}(i)
-	}
-	wg.Wait()
-
-	// Check each value and pointer distinctness
-	seen := make(map[*int]bool)
-	for i, p := range results {
-		if p == nil {
-			t.Errorf("Nil pointer at index %d", i)
-			continue
+func TestAtomicArena_Alloc(t *testing.T) {
+	t.Run("basic allocation", func(t *testing.T) {
+		arena, err := NewAtomicArena[string](3)
+		if err != nil {
+			t.Fatalf("Failed to create arena: %v", err)
 		}
-		if *p != i {
-			t.Errorf("results[%d] = %d; want %d", i, *p, i)
-		}
-		if seen[p] {
-			t.Errorf("Duplicate pointer for value %d", *p)
-		}
-		seen[p] = true
-	}
-}
 
-// BenchmarkAlloc measures the performance of Alloc under single-threaded use.
-func BenchmarkAlloc(b *testing.B) {
-	arena := NewAtomicArena[int](b.N)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		arena.Alloc(i)
-	}
-}
+		values := []string{"first", "second", "third"}
+		for i, val := range values {
+			ptr, err := arena.Alloc(val)
+			if err != nil {
+				t.Errorf("Alloc(%q) error = %v", val, err)
+			}
+			if *ptr != val {
+				t.Errorf("Alloc(%q) = %q, want %q", val, *ptr, val)
+			}
+			if stored := arena.PtrAt(uint64(i)); stored == nil || *stored != val {
+				t.Errorf("PtrAt(%d) = %v, want %q", i, stored, val)
+			}
+		}
 
-// BenchmarkParallelAlloc measures the performance of Alloc under parallel use.
-func BenchmarkParallelAlloc(b *testing.B) {
-	arena := NewAtomicArena[int](b.N)
-	b.ResetTimer()
-	b.RunParallel(func(pb *testing.PB) {
-		i := 0
-		for pb.Next() {
-			arena.Alloc(i)
-			i++
+		// Should be full now
+		_, err = arena.Alloc("fourth")
+		if err == nil {
+			t.Error("Expected error when arena is full, got nil")
 		}
 	})
+}
+
+func TestAtomicArena_Reset(t *testing.T) {
+	arena, _ := NewAtomicArena[int](3)
+
+	// Allocate some values
+	for i := 0; i < 3; i++ {
+		_, err := arena.Alloc(i)
+		if err != nil {
+			t.Fatalf("Failed to allocate: %v", err)
+		}
+	}
+
+	// Arena should be full
+	if arena.counter != 3 {
+		t.Errorf("Counter = %d, want 3", arena.counter)
+	}
+
+	// Reset the arena
+	arena.Reset()
+
+	// Counter should be reset
+	if arena.counter != 0 {
+		t.Errorf("Counter after reset = %d, want 0", arena.counter)
+	}
+
+	// Slots should be nil
+	for i := 0; i < 3; i++ {
+		if ptr := arena.PtrAt(uint64(i)); ptr != nil {
+			t.Errorf("PtrAt(%d) = %v, want nil", i, ptr)
+		}
+	}
+
+	// Should be able to allocate again
+	for i := 0; i < 3; i++ {
+		_, err := arena.Alloc(i)
+		if err != nil {
+			t.Errorf("Failed to allocate after reset: %v", err)
+		}
+	}
+}
+
+func TestAtomicArena_PtrAt(t *testing.T) {
+	t.Run("modulo behavior", func(t *testing.T) {
+		arena, _ := NewAtomicArena[int](3)
+
+		// Allocate values
+		for i := 0; i < 3; i++ {
+			_, err := arena.Alloc(i * 10)
+			if err != nil {
+				t.Fatalf("Failed to allocate: %v", err)
+			}
+		}
+
+		// Test that PtrAt uses modulo
+		tests := []struct {
+			index uint64
+			want  int
+		}{
+			{0, 0},
+			{1, 10},
+			{2, 20},
+			{3, 0},  // should wrap around to index 0
+			{4, 10}, // should wrap around to index 1
+			{5, 20}, // should wrap around to index 2
+		}
+
+		for _, tt := range tests {
+			ptr := arena.PtrAt(tt.index)
+			if ptr == nil {
+				t.Errorf("PtrAt(%d) = nil, want %d", tt.index, tt.want)
+			} else if *ptr != tt.want {
+				t.Errorf("PtrAt(%d) = %d, want %d", tt.index, *ptr, tt.want)
+			}
+		}
+	})
+
+	t.Run("empty arena", func(t *testing.T) {
+		var arena AtomicArena[int]
+		if ptr := arena.PtrAt(0); ptr != nil {
+			t.Errorf("PtrAt(0) for empty arena = %v, want nil", ptr)
+		}
+	})
+}
+
+func TestAtomicArena_ConcurrentAlloc(t *testing.T) {
+	const (
+		numGoroutines      = 10
+		allocsPerGoroutine = 100
+	)
+
+	arena, _ := NewAtomicArena[int](numGoroutines * allocsPerGoroutine)
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	// Start goroutines that concurrently allocate
+	for g := 0; g < numGoroutines; g++ {
+		go func(goroutineID int) {
+			defer wg.Done()
+
+			base := goroutineID * allocsPerGoroutine
+			for i := 0; i < allocsPerGoroutine; i++ {
+				val := base + i
+				ptr, err := arena.Alloc(val)
+				if err != nil {
+					t.Errorf("Goroutine %d: Alloc(%d) error = %v", goroutineID, val, err)
+					return
+				}
+				if *ptr != val {
+					t.Errorf("Goroutine %d: Alloc(%d) = %d, want %d", goroutineID, val, *ptr, val)
+				}
+			}
+		}(g)
+	}
+
+	wg.Wait()
+
+	// Verify all values are allocated and accessible
+	allocated := make(map[int]bool)
+	for i := uint64(0); i < arena.size; i++ {
+		ptr := arena.PtrAt(i)
+		if ptr == nil {
+			t.Errorf("PtrAt(%d) = nil, expected a value", i)
+			continue
+		}
+		val := *ptr
+		if allocated[val] {
+			t.Errorf("Value %d was allocated multiple times", val)
+		}
+		allocated[val] = true
+	}
+
+	if len(allocated) != numGoroutines*allocsPerGoroutine {
+		t.Errorf("Found %d allocated values, want %d", len(allocated), numGoroutines*allocsPerGoroutine)
+	}
+}
+
+// Benchmark the AtomicArena
+
+func BenchmarkAtomicArena_Alloc(b *testing.B) {
+	arena, _ := NewAtomicArena[int](b.N)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := arena.Alloc(i)
+		if err != nil {
+			b.Fatalf("Failed to allocate: %v", err)
+		}
+	}
+}
+
+func BenchmarkAtomicArena_PtrAt(b *testing.B) {
+	const size = 1000
+	arena, _ := NewAtomicArena[int](size)
+
+	// Fill the arena
+	for i := 0; i < size; i++ {
+		_, _ = arena.Alloc(i)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = arena.PtrAt(uint64(i % size))
+	}
+}
+
+func BenchmarkAtomicArena_Reset(b *testing.B) {
+	const size = 1000
+	arena, _ := NewAtomicArena[int](size)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		// Fill the arena
+		for j := 0; j < size; j++ {
+			_, _ = arena.Alloc(j)
+		}
+		b.StartTimer()
+
+		// Benchmark the reset operation
+		arena.Reset()
+	}
+}
+
+func BenchmarkAtomicArena_ConcurrentAlloc(b *testing.B) {
+	for _, numGoroutines := range []int{1, 2, 4, 8, 16} {
+		b.Run(fmt.Sprintf("Goroutines-%d", numGoroutines), func(b *testing.B) {
+			allocsPerGoroutine := b.N / numGoroutines
+			if allocsPerGoroutine == 0 {
+				allocsPerGoroutine = 1
+			}
+			totalAllocs := allocsPerGoroutine * numGoroutines
+
+			arena, _ := NewAtomicArena[int](totalAllocs)
+
+			var wg sync.WaitGroup
+			wg.Add(numGoroutines)
+
+			b.ResetTimer()
+			for g := 0; g < numGoroutines; g++ {
+				go func(goroutineID int) {
+					defer wg.Done()
+					base := goroutineID * allocsPerGoroutine
+					for i := 0; i < allocsPerGoroutine; i++ {
+						val := base + i
+						_, _ = arena.Alloc(val)
+					}
+				}(g)
+			}
+
+			wg.Wait()
+		})
+	}
 }

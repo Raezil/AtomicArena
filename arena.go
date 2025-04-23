@@ -1,58 +1,70 @@
 package atomicarena
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
 )
 
-// AtomicRingArena is a fixed-size, bump-pointer ring allocator for T.
+// AtomicArena is a fixed-size, bump-pointer allocator for T.
 // Safe for concurrent use.
 type AtomicArena[T any] struct {
 	mu      sync.Mutex
 	buf     []atomic.Pointer[T]
-	size    uint64    // buffer length
-	counter uint64    // ever-growing allocation counter
-	_       [8]uint64 // padding to avoid false sharing
+	size    uint64
+	counter uint64
+	_       [8]uint64 // padding
 }
 
-// NewAtomicRingArena creates a ring of exactly `size` slots.
-// Panics if size <= 0.
-func NewAtomicArena[T any](size int) *AtomicArena[T] {
+// NewAtomicArena creates an arena of exactly `size` slots.
+// Returns an error if size <= 0.
+func NewAtomicArena[T any](size int) (*AtomicArena[T], error) {
 	if size <= 0 {
-		panic("size must be > 0")
+		return nil, errors.New("size must be > 0")
 	}
 	buf := make([]atomic.Pointer[T], size)
 	return &AtomicArena[T]{
 		buf:  buf,
 		size: uint64(size),
-		mu:   sync.Mutex{},
-	}
+	}, nil
 }
 
-// Alloc atomically grabs the next slot, overwrites it with val,
-// and returns a pointer to an independent copy of that slot.
-func (a *AtomicArena[T]) Alloc(val T) *T {
-	idx := atomic.AddUint64(&a.counter, 1) - 1
-	slot := idx % a.size
+// Alloc stores val in the next free slot, or returns an error if full.
+func (a *AtomicArena[T]) Alloc(val T) (*T, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
-	// copy value and store atomically in the buffer
+	if a.counter >= a.size {
+		return nil, errors.New("arena is full")
+	}
+
+	slot := a.counter
+	a.counter++
+
 	ptr := new(T)
 	*ptr = val
 	a.buf[slot].Store(ptr)
 
-	// return independent copy
 	out := new(T)
 	*out = val
-	return out
+	return out, nil
 }
 
+// Reset clears all slots and resets the allocation counter.
 func (a *AtomicArena[T]) Reset() {
-	atomic.StoreUint64(&a.counter, 0)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.counter = 0
 	for i := range a.buf {
 		a.buf[i].Store(nil)
 	}
 }
 
+// PtrAt returns the pointer at index modulo arena size.
 func (a *AtomicArena[T]) PtrAt(i uint64) *T {
+	if a.size == 0 {
+		return nil
+	}
 	return a.buf[i%a.size].Load()
 }
