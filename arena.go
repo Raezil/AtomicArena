@@ -1,4 +1,4 @@
-package AtomicArena
+package atomicarena
 
 import (
 	"sync"
