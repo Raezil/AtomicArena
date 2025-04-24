@@ -44,10 +44,7 @@ func (a *AtomicArena[T]) Alloc(val T) (*T, error) {
 	ptr := new(T)
 	*ptr = val
 	a.buf[slot].Store(ptr)
-
-	out := new(T)
-	*out = val
-	return out, nil
+	return ptr, nil
 }
 
 // Reset clears all slots and resets the allocation counter.
