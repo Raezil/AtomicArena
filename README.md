@@ -1,7 +1,6 @@
 <p align="center">
   <img src="https://github.com/user-attachments/assets/f3054efc-d10f-42ce-bb80-c6496b0dd5b7" alt="centered image">
 </p>
-# AtomicArena
 
 `AtomicArena[T]` is a fixed-size, bump-pointer ring allocator in Go, safe for concurrent use. It stores elements in a circular buffer and returns unique pointers to newly allocated values, avoiding data races.
 
