@@ -39,6 +39,13 @@ func main() {
         fmt.Println("Batch Allocated:", p.Value)
     }
 
+    // Append additional items to the existing slice
+    moreItems := []Item{{4}, {5}}
+    ptrs, _ = arena.AppendSlice(ptrs, moreItems)
+    for _, p := range ptrs {
+        fmt.Println("After AppendSlice:", p.Value)
+    }
+
     // Build a full slice (fills missing slots with zero-values)
     fullSlice, _ := arena.MakeSlice()
     fmt.Printf("MakeSlice returned %d pointers\n", len(fullSlice))
@@ -95,9 +102,13 @@ func (a *AtomicArena[T]) Reset() {
 }
 ```
 
+### `func (a *AtomicArena[T]) AppendSlice(dest []*T, vals []T) ([]*T, error)`
+
+Appends each value in `vals` into the existing slice `dest` by allocating them in the arena, returning the updated slice. If the arena becomes full before all values are stored, it returns the (possibly partially updated) slice and an error.
+
 ## Testing & Benchmarking
 
-This package includes tests and benchmarks for `AllocSlice` and `MakeSlice`. To run them:
+This package includes tests and benchmarks for `AllocSlice`, `AppendSlice`, and `MakeSlice`. To run them:
 
 ```sh
 go test -bench=.

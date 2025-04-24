@@ -351,3 +351,218 @@ func BenchmarkMakeSlice(b *testing.B) {
 		a.MakeSlice()
 	}
 }
+
+func TestAppendSlice(t *testing.T) {
+	arena, err := NewAtomicArena[int](5)
+	if err != nil {
+		t.Fatalf("failed to create arena: %v", err)
+	}
+	// Pre-allocate some values
+	dest, err := arena.AllocSlice([]int{1, 2})
+	if err != nil {
+		t.Fatalf("AllocSlice failed: %v", err)
+	}
+	dest, err = arena.AppendSlice(dest, []int{3, 4})
+	if err != nil {
+		t.Fatalf("AppendSlice failed: %v", err)
+	}
+
+	// Verify length and contents
+	if len(dest) != 4 {
+		t.Errorf("expected length 4, got %d", len(dest))
+	}
+	for i, ptr := range dest {
+		want := i + 1
+		if *ptr != want {
+			t.Errorf("dest[%d]=%d, want %d", i, *ptr, want)
+		}
+	}
+}
+
+func TestAppendSlice_Oversize(t *testing.T) {
+	arena, err := NewAtomicArena[int](3)
+	if err != nil {
+		t.Fatalf("failed to create arena: %v", err)
+	}
+	// Allocate one slot
+	dest, err := arena.AllocSlice([]int{1})
+	if err != nil {
+		t.Fatalf("AllocSlice failed: %v", err)
+	}
+	// Try to append too many values
+	_, err = arena.AppendSlice(dest, []int{2, 3, 4})
+	if err == nil {
+		t.Fatal("expected error when appending beyond capacity, got nil")
+	}
+}
+
+func BenchmarkAppendSlice(b *testing.B) {
+	for _, size := range []int{8, 1024, 1 << 20} {
+		b.Run(fmt.Sprintf("Size%d", size), func(b *testing.B) {
+			arena, err := NewAtomicArena[int](size * 2)
+			if err != nil {
+				b.Fatalf("failed to create arena: %v", err)
+			}
+			vals := make([]int, size)
+			for i := range vals {
+				vals[i] = i
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				dest := make([]*int, 0)
+				dest, _ = arena.AppendSlice(dest, vals)
+			}
+		})
+	}
+}
+
+type dummyValue = int
+
+func BenchmarkAtomicArenaAlloc(b *testing.B) {
+	const N = 1000
+	a, err := NewAtomicArena[dummyValue](N)
+	if err != nil {
+		b.Fatalf("failed to create arena: %v", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// reset when full to avoid ErrArenaFull
+		if _, err := a.Alloc(dummyValue(i)); err != nil {
+			a.Reset()
+			_, _ = a.Alloc(dummyValue(i))
+		}
+	}
+}
+
+func BenchmarkNative_New(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = new(dummyValue)
+	}
+}
+
+func BenchmarkAtomicArena_AllocSlice(b *testing.B) {
+	const N = 1000
+	a, err := NewAtomicArena[dummyValue](N)
+	if err != nil {
+		b.Fatalf("failed to create arena: %v", err)
+	}
+	vals := make([]dummyValue, N)
+	for i := range vals {
+		vals[i] = dummyValue(i)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		a.Reset()
+		if _, err := a.AllocSlice(vals); err != nil {
+			b.Fatalf("AllocSlice error: %v", err)
+		}
+	}
+}
+
+func BenchmarkNative_SliceAlloc(b *testing.B) {
+	const N = 1000
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		slice := make([]*dummyValue, 0, N)
+		for j := 0; j < N; j++ {
+			slice = append(slice, new(dummyValue))
+		}
+		_ = slice
+	}
+}
+
+const arenaSize = 1000000
+
+type S100 [100]byte
+type S1000 [1000]byte
+type S10000 [10000]byte
+type S100000 [100000]byte
+type S1000000 [1000000]byte
+
+func BenchmarkS100(b *testing.B) {
+	b.Run("Native", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = new(S100)
+		}
+	})
+	b.Run("Arena", func(b *testing.B) {
+		b.ReportAllocs()
+		arena, _ := NewAtomicArena[S100](arenaSize)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			arena.Alloc(S100{})
+		}
+	})
+}
+
+func BenchmarkS1000(b *testing.B) {
+	b.Run("Native", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = new(S1000)
+		}
+	})
+	b.Run("Arena", func(b *testing.B) {
+		b.ReportAllocs()
+		arena, _ := NewAtomicArena[S1000](arenaSize)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			arena.Alloc(S1000{})
+		}
+	})
+}
+
+func BenchmarkS10000(b *testing.B) {
+	b.Run("Native", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = new(S10000)
+		}
+	})
+	b.Run("Arena", func(b *testing.B) {
+		b.ReportAllocs()
+		arena, _ := NewAtomicArena[S10000](arenaSize)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			arena.Alloc(S10000{})
+		}
+	})
+}
+
+func BenchmarkS100000(b *testing.B) {
+	b.Run("Native", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = new(S100000)
+		}
+	})
+	b.Run("Arena", func(b *testing.B) {
+		b.ReportAllocs()
+		arena, _ := NewAtomicArena[S100000](arenaSize)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			arena.Alloc(S100000{})
+		}
+	})
+}
+
+func BenchmarkS1000000(b *testing.B) {
+	b.Run("Native", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = new(S1000000)
+		}
+	})
+	b.Run("Arena", func(b *testing.B) {
+		b.ReportAllocs()
+		arena, _ := NewAtomicArena[S1000000](arenaSize)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			arena.Alloc(S1000000{})
+		}
+	})
+}

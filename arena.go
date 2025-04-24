@@ -109,3 +109,17 @@ func (a *AtomicArena[T]) MakeSlice() ([]*T, error) {
 	}
 	return result, nil
 }
+
+// AppendSlice appends each value in vals into the existing slice dest
+// by allocating them in the arena, returning the updated slice.
+// If the arena becomes full before all values are stored, it returns an error.
+func (a *AtomicArena[T]) AppendSlice(dest []*T, vals []T) ([]*T, error) {
+	for _, val := range vals {
+		ptr, err := a.Alloc(val)
+		if err != nil {
+			return dest, err
+		}
+		dest = append(dest, ptr)
+	}
+	return dest, nil
+}
