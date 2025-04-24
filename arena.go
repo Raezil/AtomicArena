@@ -47,6 +47,21 @@ func (a *AtomicArena[T]) Alloc(val T) (*T, error) {
 	return ptr, nil
 }
 
+// AllocSlice stores each value in vals into the arena using Alloc,
+// returning a slice of pointers to the stored values. If the arena
+// becomes full before all values are stored, it returns an error.
+func (a *AtomicArena[T]) AllocSlice(vals []T) ([]*T, error) {
+	pointers := make([]*T, 0, len(vals))
+	for _, val := range vals {
+		ptr, err := a.Alloc(val)
+		if err != nil {
+			return nil, err
+		}
+		pointers = append(pointers, ptr)
+	}
+	return pointers, nil
+}
+
 // Reset clears all slots and resets the allocation counter.
 func (a *AtomicArena[T]) Reset() {
 	a.mu.Lock()
@@ -64,4 +79,33 @@ func (a *AtomicArena[T]) PtrAt(i uint64) *T {
 		return nil
 	}
 	return a.buf[i%a.size].Load()
+}
+
+// MakeSlice ensures the arena is full by using AllocSlice to fill
+// any remaining slots with zero values, then returns a slice of all pointers in order.
+func (a *AtomicArena[T]) MakeSlice() ([]*T, error) {
+	// Determine how many slots are unfilled
+	a.mu.Lock()
+	filled := a.counter
+	total := a.size
+	a.mu.Unlock()
+
+	missing := int(total - filled)
+	if missing > 0 {
+		// Prepare a zero-valued slice to fill missing slots
+		zeros := make([]T, missing)
+		if _, err := a.AllocSlice(zeros); err != nil {
+			return nil, err
+		}
+	}
+
+	// Build the full slice
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	result := make([]*T, total)
+	for i := uint64(0); i < total; i++ {
+		result[i] = a.buf[i].Load()
+	}
+	return result, nil
 }

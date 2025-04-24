@@ -276,3 +276,78 @@ func BenchmarkAtomicArena_ConcurrentAlloc(b *testing.B) {
 		})
 	}
 }
+
+func TestAllocSlice_Success(t *testing.T) {
+	a, _ := NewAtomicArena[int](3)
+	vals := []int{1, 2, 3}
+	ptrs, err := a.AllocSlice(vals)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	for i, v := range vals {
+		if *ptrs[i] != v {
+			t.Errorf("ptrs[%d]=%d; want %d", i, *ptrs[i], v)
+		}
+	}
+}
+
+func TestAllocSlice_Overflow(t *testing.T) {
+	a, _ := NewAtomicArena[int](2)
+	_, err := a.AllocSlice([]int{1, 2, 3})
+	if err == nil {
+		t.Errorf("expected overflow error, got nil")
+	}
+}
+
+func TestMakeSlice_Partial(t *testing.T) {
+	a, _ := NewAtomicArena[int](3)
+	a.Alloc(1)
+	slice, err := a.MakeSlice()
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if len(slice) != 3 {
+		t.Errorf("len(slice)=%d; want 3", len(slice))
+	}
+	if *slice[0] != 1 {
+		t.Errorf("slice[0]=%d; want 1", *slice[0])
+	}
+	if *slice[1] != 0 || *slice[2] != 0 {
+		t.Errorf("expected zero values for unfilled slots, got %v, %v", *slice[1], *slice[2])
+	}
+}
+
+func TestMakeSlice_Full(t *testing.T) {
+	a, _ := NewAtomicArena[int](3)
+	vals := []int{1, 2, 3}
+	a.AllocSlice(vals)
+	slice, err := a.MakeSlice()
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	for i, v := range vals {
+		if *slice[i] != v {
+			t.Errorf("slice[%d]=%d; want %d", i, *slice[i], v)
+		}
+	}
+}
+
+func BenchmarkAllocSlice(b *testing.B) {
+	a, _ := NewAtomicArena[int](1000)
+	vals := make([]int, 1000)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		a.Reset()
+		a.AllocSlice(vals)
+	}
+}
+
+func BenchmarkMakeSlice(b *testing.B) {
+	a, _ := NewAtomicArena[int](1000)
+	vals := make([]int, 1000)
+	a.AllocSlice(vals)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		a.MakeSlice()
+	}
+}
