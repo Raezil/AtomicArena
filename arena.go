@@ -9,12 +9,11 @@ import (
 // AtomicArena is a fixed-size, bump-pointer allocator for T.
 // Allocations are lock-free; Reset should not be called concurrently with Alloc.
 type AtomicArena[T any] struct {
-	data    []T
 	buf     []atomic.Pointer[T]
 	size    uint64
 	counter uint64
 	mu      sync.Mutex
-	_       [8]uint64 // padding
+	_       [8]uint64 // padding for alignment
 }
 
 // NewAtomicArena creates an arena of exactly `size` slots.
@@ -23,10 +22,8 @@ func NewAtomicArena[T any](size int) (*AtomicArena[T], error) {
 	if size <= 0 {
 		return nil, errors.New("size must be > 0")
 	}
-	data := make([]T, size)
 	buf := make([]atomic.Pointer[T], size)
 	return &AtomicArena[T]{
-		data: data,
 		buf:  buf,
 		size: uint64(size),
 	}, nil
@@ -41,9 +38,10 @@ func (a *AtomicArena[T]) Alloc(val T) (*T, error) {
 		atomic.AddUint64(&a.counter, ^uint64(0))
 		return nil, errors.New("arena is full")
 	}
-	ptr := &a.data[idx]
+	// allocate pointer and set value
+	ptr := new(T)
 	*ptr = val
-	// release: ensure data written before pointer published
+	// ensure data written before publishing pointer
 	a.buf[idx].Store(ptr)
 	return ptr, nil
 }
@@ -63,16 +61,22 @@ func (a *AtomicArena[T]) AllocSlice(vals []T) ([]*T, error) {
 	return pointers, nil
 }
 
-// Reset clears all slots and resets the allocation counter.
+// Reset clears all slots up to the current counter and resets it to zero.
 // Not safe to call concurrently with Alloc.
 func (a *AtomicArena[T]) Reset() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	atomic.StoreUint64(&a.counter, 0)
-	// clear buffer pointers for safety
-	for i := range a.buf {
+
+	// clear only used slots
+	n := atomic.LoadUint64(&a.counter)
+	if n > a.size {
+		n = a.size
+	}
+	for i := uint64(0); i < n; i++ {
 		a.buf[i].Store(nil)
 	}
+	// reset counter
+	atomic.StoreUint64(&a.counter, 0)
 }
 
 // PtrAt returns the pointer at index i modulo arena size,
