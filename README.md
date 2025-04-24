@@ -5,7 +5,7 @@
 ## Installation
 
 ```sh
-go get github.com/Raezil/AtomicArena
+go get github.com/Raezil/atomicarena
 ```
 
 ## Usage
@@ -15,7 +15,7 @@ package main
 
 import (
     "fmt"
-    "github.com/Raezil/AtomicArena"
+    "github.com/Raezil/atomicarena"
 )
 
 type Item struct {
