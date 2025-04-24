@@ -64,17 +64,13 @@ Clears the arena back to its initial state:
 
 ```go
 func (a *AtomicArena[T]) Reset() {
-    a.mu.Lock()
-    defer a.mu.Unlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
-    // Reset allocation counter
-    atomic.StoreUint64(&a.counter, 0)
-
-    // Zero out buffer
-    var zero T
-    for i := range a.buf {
-        a.buf[i] = zero
-    }
+	a.counter = 0
+	for i := range a.buf {
+		a.buf[i].Store(nil)
+	}
 }
 ```
 
