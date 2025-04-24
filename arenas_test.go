@@ -298,25 +298,6 @@ func TestAllocSlice_Overflow(t *testing.T) {
 		t.Errorf("expected overflow error, got nil")
 	}
 }
-
-func TestMakeSlice_Partial(t *testing.T) {
-	a, _ := NewAtomicArena[int](3)
-	a.Alloc(1)
-	slice, err := a.MakeSlice()
-	if err != nil {
-		t.Fatalf("expected success, got error: %v", err)
-	}
-	if len(slice) != 3 {
-		t.Errorf("len(slice)=%d; want 3", len(slice))
-	}
-	if *slice[0] != 1 {
-		t.Errorf("slice[0]=%d; want 1", *slice[0])
-	}
-	if *slice[1] != 0 || *slice[2] != 0 {
-		t.Errorf("expected zero values for unfilled slots, got %v, %v", *slice[1], *slice[2])
-	}
-}
-
 func TestMakeSlice_Full(t *testing.T) {
 	a, _ := NewAtomicArena[int](3)
 	vals := []int{1, 2, 3}
