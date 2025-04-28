@@ -249,3 +249,67 @@ func BenchmarkNativeNew(b *testing.B) {
 		})
 	}
 }
+
+func FuzzAppendByteSlice(f *testing.F) {
+	// Seed corpus
+	f.Add([]byte{})
+	f.Add([]byte{0})
+	f.Add([]byte{1, 2, 3, 4, 5})
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// Create an arena with capacity equal to input length
+		arena := NewAtomicArena[byte](uintptr(len(data)))
+
+		ptrs, err := arena.AppendSlice(data)
+		if err != nil {
+			t.Fatalf("AppendSlice returned error on data %v: %v", data, err)
+		}
+		if len(ptrs) != len(data) {
+			t.Fatalf("Expected %d pointers, got %d", len(data), len(ptrs))
+		}
+		for i, b := range data {
+			if *ptrs[i] != b {
+				t.Errorf("Index %d: expected %v, got %v", i, b, *ptrs[i])
+			}
+		}
+
+		// Test after reset
+		arena.Reset()
+		ptrs2, err2 := arena.AppendSlice(data)
+		if err2 != nil {
+			t.Fatalf("AppendSlice after Reset returned error: %v", err2)
+		}
+		for i, b := range data {
+			if *ptrs2[i] != b {
+				t.Errorf("After Reset index %d: expected %v, got %v", i, b, *ptrs2[i])
+			}
+		}
+	})
+}
+
+// FuzzAllocByte fuzz-tests the Alloc method for bytes.
+func FuzzAllocByte(f *testing.F) {
+	// Seed corpus
+	f.Add(byte(0))
+	f.Add(byte(1))
+	f.Add(byte(255))
+
+	f.Fuzz(func(t *testing.T, v byte) {
+		// Create arena with capacity 1
+		arena := NewAtomicArena[byte](1)
+
+		ptr, err := arena.Alloc(v)
+		if err != nil {
+			t.Fatalf("Alloc returned error for value %v: %v", v, err)
+		}
+		if *ptr != v {
+			t.Errorf("Expected %v, got %v", v, *ptr)
+		}
+
+		// Next Alloc should error
+		_, err2 := arena.Alloc(v)
+		if err2 == nil {
+			t.Errorf("Expected error on second Alloc, got nil")
+		}
+	})
+}
