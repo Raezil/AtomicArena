@@ -12,10 +12,10 @@ A lightweight, generic memory arena for Go, built with atomic pointers and `unsa
 ## Installation
 
 ```bash
-go get github.com/yourusername/atomicarena
+go get github.com/Raezil/atomicarena
 ```
 
-> Replace `github.com/yourusername/atomicarena` with your module path.
+> Replace `github.com/Raezil/atomicarena` with your module path.
 
 ## Usage
 
@@ -26,7 +26,7 @@ package main
 
 import (
     "fmt"
-    "github.com/yourusername/atomicarena"
+    "github.com/Raezil/atomicarena"
 )
 
 func main() {
@@ -56,7 +56,7 @@ package main
 
 import (
     "fmt"
-    "github.com/yourusername/atomicarena"
+    "github.com/Raezil/atomicarena"
 )
 
 type Point struct { X, Y float64 }
