@@ -1,3 +1,4 @@
+// atomicarena.go
 package atomicarena
 
 import (
@@ -6,54 +7,53 @@ import (
 	"unsafe"
 )
 
-// AtomicArena is a lock-free arena allocator with a fixed capacity in bytes.
-// When the total size of allocations exceeds the specified capacity, Alloc returns an error.
+// AtomicArena is a thread-safe lock-free arena allocator with a fixed maximum number of elements.
+// It stores up to maxElems objects of type T. Alloc returns an error if the arena is full.
 // T must be a type whose size is known at compile time.
-
-// AtomicArena holds the buffer of atomic pointers, the current offset, and the overall capacity.
 type AtomicArena[T any] struct {
-	buff     []atomic.Pointer[T]
-	offset   uintptr
-	capacity uintptr
+	buff     []atomic.Pointer[T] // pre-allocated slice of atomic pointers
+	elemSize uintptr             // size of one element (not used directly but for consistency)
+	maxElems uintptr             // maximum number of elements
+	count    atomic.Uintptr      // number of elements allocated so far
 }
 
-// NewAtomicArena creates a new AtomicArena with the given capacity in bytes.
-// Internally, it pre-allocates the buffer slice with capacity equal to
-// capacity/sizeof(T) pointers, to avoid reallocations until the arena is full.
-func NewAtomicArena[T any](capacity uintptr) *AtomicArena[T] {
+// NewAtomicArena creates a new AtomicArena that can hold up to maxElems elements of type T.
+// It pre-allocates the internal buffer accordingly.
+func NewAtomicArena[T any](maxElems uintptr) *AtomicArena[T] {
 	elemSize := unsafe.Sizeof(*new(T))
-	maxElems := capacity / elemSize
 	return &AtomicArena[T]{
-		buff:     make([]atomic.Pointer[T], 0, maxElems),
-		capacity: capacity,
+		buff:     make([]atomic.Pointer[T], maxElems),
+		elemSize: elemSize,
+		maxElems: maxElems,
 	}
 }
 
-// Alloc allocates obj within the arena. If the arena is full (i.e. adding this allocation
-// would exceed the capacity), it returns an error rather than growing the arena.
-func (mem *AtomicArena[T]) Alloc(obj T) (*T, error) {
-	sz := unsafe.Sizeof(obj)
-	if mem.offset+sz > mem.capacity {
-		return nil, fmt.Errorf("arena full: capacity %d bytes exceeded by request of %d bytes", mem.capacity, sz)
+// Alloc atomically allocates obj within the arena. If the arena is full (maxElems reached), it returns an error.
+func (a *AtomicArena[T]) Alloc(obj T) (*T, error) {
+	// reserve slot
+	for {
+		old := a.count.Load()
+		if old >= a.maxElems {
+			return nil, fmt.Errorf("arena full: max elements %d exceeded", a.maxElems)
+		}
+		if a.count.CompareAndSwap(old, old+1) {
+			// slot reserved at index old
+			ptr := new(T)
+			*ptr = obj
+
+			// store pointer
+			a.buff[old].Store(ptr)
+			return ptr, nil
+		}
 	}
-
-	ptr := new(T)
-	*ptr = obj
-
-	var atomicPtr atomic.Pointer[T]
-	atomicPtr.Store(ptr)
-
-	mem.buff = append(mem.buff, atomicPtr)
-	mem.offset += sz
-
-	return ptr, nil
 }
 
-// Reset clears all allocations in the arena without freeing the underlying memory.
-// It zeroes each atomic pointer and resets the offset back to zero.
-func (mem *AtomicArena[T]) Reset() {
-	for i := range mem.buff {
-		mem.buff[i].Store(nil)
+// Reset clears all allocations in the arena, allowing reuse.
+func (a *AtomicArena[T]) Reset() {
+	// clear stored pointers
+	for i := uintptr(0); i < a.maxElems; i++ {
+		a.buff[i].Store(nil)
 	}
-	mem.offset = 0
+	// reset count
+	a.count.Store(0)
 }
