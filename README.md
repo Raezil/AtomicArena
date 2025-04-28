@@ -1,116 +1,102 @@
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/f3054efc-d10f-42ce-bb80-c6496b0dd5b7" alt="centered image">
-</p>
+# atomicarena
 
-`AtomicArena[T]` is a fixed-size, bump-pointer ring allocator in Go, safe for concurrent use. It stores elements in a circular buffer and returns unique pointers to newly allocated values, avoiding data races.
+A lightweight, generic memory arena for Go, built with atomic pointers and `unsafe.Sizeof` for offset tracking. Perfect for scenarios where you want fast, lock-free allocations with the ability to reset the arena in one go.
+
+## Features
+
+- **Generic**: Works with any Go type (`T any`).
+- **Atomic-safe**: Uses `sync/atomic.Pointer[T]` to store allocations, making it safe for concurrent reads.
+- **Offset tracking**: Keeps a running total of bytes allocated via `unsafe.Sizeof`.
+- **Easy reset**: `Reset()` zeroes out all stored pointers and resets the offset, preparing the arena for reuse.
 
 ## Installation
 
-```sh
-go get github.com/Raezil/atomicarena
+```bash
+go get github.com/yourusername/atomicarena
 ```
 
+> Replace `github.com/yourusername/atomicarena` with your module path.
+
 ## Usage
+
+Import the package and start allocating objects in your arena:
 
 ```go
 package main
 
 import (
     "fmt"
-    "github.com/Raezil/atomicarena"
+    "github.com/yourusername/atomicarena"
 )
 
-type Item struct {
-    Value int
-}
-
 func main() {
-    // Create an arena with 100 slots
-    arena, _ := atomicarena.NewAtomicArena[Item](100)
+    // Create a new arena for ints
+    arena := &atomicarena.AtomicArena[int]{}
 
-    // Allocate single items
-    ptr, _ := arena.Alloc(Item{Value: 42})
-    fmt.Println("Allocated value:", ptr.Value)
+    // Allocate some integers
+    ptr1, _ := arena.Alloc(100)
+    ptr2, _ := arena.Alloc(200)
 
-    // Allocate multiple values at once
-    items := []Item{{1}, {2}, {3}}
-    ptrs, _ := arena.AllocSlice(items)
-    for _, p := range ptrs {
-        fmt.Println("Batch Allocated:", p.Value)
-    }
+    fmt.Println(*ptr1) // 100
+    fmt.Println(*ptr2) // 200
 
-    // Append additional items to the existing slice
-    moreItems := []Item{{4}, {5}}
-    ptrs, _ = arena.AppendSlice(ptrs, moreItems)
-    for _, p := range ptrs {
-        fmt.Println("After AppendSlice:", p.Value)
-    }
+    // Check total bytes allocated
+    fmt.Printf("Total bytes: %d\n", arena.offset)
 
-    // Build a full slice (fills missing slots with zero-values)
-    fullSlice, _ := arena.MakeSlice()
-    fmt.Printf("MakeSlice returned %d pointers\n", len(fullSlice))
-
-    // Peek at a recent slot (e.g., first allocation)
-    peek := arena.PtrAt(0)
-    fmt.Println("Peeked value:", peek.Value)
-
-    // Reset the arena
+    // Reset the arena for reuse
     arena.Reset()
-    fmt.Println("After reset, peek slot 0 is nil?", arena.PtrAt(0) == nil)
+    fmt.Println("After reset, offset:", arena.offset)
 }
 ```
 
-## API
-
-### `func NewAtomicArena[T any](size int) (*AtomicArena[T], error)`
-
-Creates a new arena with the given number of slots (must be > 0). Returns an error if the size is invalid.
-
-### `func (a *AtomicArena[T]) Alloc(val T) (*T, error)`
-
-Allocates the next free slot, stores `val`, and returns a pointer to an independent copy. Returns an error if the arena is full.
-
-### `func (a *AtomicArena[T]) AllocSlice(vals []T) ([]*T, error)`
-
-Allocates each element from `vals` in sequence, returning a slice of pointers to the stored values. If the arena fills up before storing all elements, it returns an error and stops.
-
-### `func (a *AtomicArena[T]) MakeSlice() ([]*T, error)`
-
-Ensures the arena is completely filled by allocating zero-value elements for any remaining slots, then returns a slice of pointers to all stored values in allocation order. Returns an error if allocation fails during filling.
-
-### `func (a *AtomicArena[T]) PtrAt(i uint64) *T`
-
-Returns a pointer to the element at index `i mod size` in the ring buffer, allowing you to peek at past allocations.
-
-### `func (a *AtomicArena[T]) Reset()`
-
-Clears the arena back to its initial state:
-
-- Locks the arena to prevent races with concurrent `Alloc`, `AllocSlice`, or `PtrAt` calls.
-- Resets the internal allocation counter to zero.
-- Zeroes out every slot in the buffer.
+For composite or custom types:
 
 ```go
-func (a *AtomicArena[T]) Reset() {
-    a.mu.Lock()
-    defer a.mu.Unlock()
+package main
 
-    a.counter = 0
-    for i := range a.buf {
-        a.buf[i].Store(nil)
-    }
+import (
+    "fmt"
+    "github.com/yourusername/atomicarena"
+)
+
+type Point struct { X, Y float64 }
+
+func main() {
+    arena := &atomicarena.AtomicArena[Point]{}
+    p, _ := arena.Alloc(Point{X: 1.5, Y: 3.7})
+    fmt.Printf("Allocated point: %+v\n", *p)
 }
 ```
 
-### `func (a *AtomicArena[T]) AppendSlice(dest []*T, vals []T) ([]*T, error)`
+## API Reference
 
-Appends each value in `vals` into the existing slice `dest` by allocating them in the arena, returning the updated slice. If the arena becomes full before all values are stored, it returns the (possibly partially updated) slice and an error.
+```go
+// AtomicArena is a generic memory arena for type T.
+type AtomicArena[T any] struct {
+    buff   []atomic.Pointer[T] // underlying slice of pointers
+    offset uintptr             // total bytes allocated
+}
 
-## Testing & Benchmarking
+// Alloc stores a copy of obj in the arena and returns its pointer.
+// Currently always returns a nil error.
+func (mem *AtomicArena[T]) Alloc(obj T) (*T, error)
 
-This package includes tests and benchmarks for `AllocSlice`, `AppendSlice`, and `MakeSlice`. To run them:
-
-```sh
-go test -bench=.
+// Reset clears all stored pointers and resets the offset to zero.
+func (mem *AtomicArena[T]) Reset()
 ```
+
+## Running Tests & Benchmarks
+
+```bash
+go test -v ./atomicarena
+go test -bench=. ./atomicarena
+```
+
+## Next Steps & Ideas 🚀
+
+- **Pooling**: Integrate an object pool to reuse memory slots and reduce GC pressure.
+- **Concurrent benchmarks**: Add `b.RunParallel` benches to measure real-world concurrent allocation performance.
+- **GC impact**: Track GC metrics (pause times, collections) to validate arena benefits.
+
+Enjoy exploring atomicarena! Contributions and feedback are welcome. Pull requests are always appreciated ❤️
 
