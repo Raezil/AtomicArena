@@ -83,7 +83,3 @@ Run tests with:
 go test --bench=. --cover --race
 ```
 
-## License
-
-MIT © Raezil
-
