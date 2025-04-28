@@ -233,7 +233,6 @@ var bufAllocFuncs = []struct {
 }
 
 // BenchmarkNativeNew measures the cost of allocating a fixed-size array via new().
-// BenchmarkNativeNew measures the cost of allocating a fixed-size array via new().
 func BenchmarkNativeNew(b *testing.B) {
 	var sink interface{}
 	for _, entry := range bufAllocFuncs {
