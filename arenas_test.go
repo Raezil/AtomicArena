@@ -133,3 +133,47 @@ func BenchmarkAlloc(b *testing.B) {
 		})
 	}
 }
+
+func TestAppendSlice(t *testing.T) {
+	arena := NewAtomicArena[int](5)
+	objs := []int{1, 2, 3}
+	ptrs, err := arena.AppendSlice(objs)
+	if err != nil {
+		t.Fatalf("AppendSlice failed: %v", err)
+	}
+	if len(ptrs) != len(objs) {
+		t.Fatalf("Expected %v pointers, got %v", len(objs), len(ptrs))
+	}
+	for i, ptr := range ptrs {
+		if *ptr != objs[i] {
+			t.Errorf("Expected %v, got %v", objs[i], *ptr)
+		}
+	}
+
+	ptrs2, err := arena.AppendSlice([]int{4, 5})
+	if err != nil {
+		t.Fatalf("AppendSlice2 failed: %v", err)
+	}
+	if *ptrs2[0] != 4 || *ptrs2[1] != 5 {
+		t.Errorf("Expected 4,5 got %v,%v", *ptrs2[0], *ptrs2[1])
+	}
+
+	_, err = arena.AppendSlice([]int{6})
+	if err == nil {
+		t.Errorf("Expected error on full arena, got nil")
+	}
+}
+
+func BenchmarkAppendSlice(b *testing.B) {
+	size := uintptr(1000)
+	objs := make([]int, size)
+	for i := range objs {
+		objs[i] = i
+	}
+	arena := NewAtomicArena[int](size)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		arena.Reset()
+		_, _ = arena.AppendSlice(objs)
+	}
+}

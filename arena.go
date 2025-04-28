@@ -1,4 +1,3 @@
-// atomicarena.go
 package atomicarena
 
 import (
@@ -44,6 +43,31 @@ func (a *AtomicArena[T]) Alloc(obj T) (*T, error) {
 			// store pointer
 			a.buff[old].Store(ptr)
 			return ptr, nil
+		}
+	}
+}
+
+// AppendSlice atomically allocates a slice of objs within the arena. It returns a slice of pointers to the allocated objects.
+// If there is not enough space to allocate all objs (maxElems exceeded), it returns an error without modifying the arena.
+func (a *AtomicArena[T]) AppendSlice(objs []T) ([]*T, error) {
+	n := uintptr(len(objs))
+	// reserve a contiguous block of n slots
+	for {
+		old := a.count.Load()
+		if old+n > a.maxElems {
+			return nil, fmt.Errorf("arena full: cannot append slice of size %d, max elements %d exceeded", n, a.maxElems)
+		}
+		if a.count.CompareAndSwap(old, old+n) {
+			// reserved block starting at index old
+			ptrs := make([]*T, len(objs))
+			for i, obj := range objs {
+				ptr := new(T)
+				*ptr = obj
+				// store each pointer in the reserved slot
+				a.buff[old+uintptr(i)].Store(ptr)
+				ptrs[i] = ptr
+			}
+			return ptrs, nil
 		}
 	}
 }
