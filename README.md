@@ -1,13 +1,13 @@
-# atomicarena
+# AtomicArena
 
-A lightweight, generic memory arena for Go, built with atomic pointers and `unsafe.Sizeof` for offset tracking. Perfect for scenarios where you want fast, lock-free allocations with the ability to reset the arena in one go.
+`AtomicArena` is a lock-free, thread-safe generic arena allocator for Go. It provides a fixed-capacity container of atomic pointers, allowing you to allocate objects of any type **T** up to a maximum element count without locks or garbage collection overhead.
 
 ## Features
 
-- **Generic**: Works with any Go type (`T any`).
-- **Atomic-safe**: Uses `sync/atomic.Pointer[T]` to store allocations, making it safe for concurrent reads.
-- **Offset tracking**: Keeps a running total of bytes allocated via `unsafe.Sizeof`.
-- **Easy reset**: `Reset()` zeroes out all stored pointers and resets the offset, preparing the arena for reuse.
+- **Generic**: Works with any Go type `T` whose size is known at compile time.
+- **Lock-Free**: Uses atomic operations (`atomic.Uintptr`, `atomic.Pointer[T]`) for high concurrency without mutexes.
+- **Fixed Capacity**: Pre-allocates a buffer for `maxElems` objects to avoid slice growth and dynamic allocations after initialization.
+- **Resettable**: Clear the arena in constant time, reusing all slots immediately.
 
 ## Installation
 
@@ -15,12 +15,8 @@ A lightweight, generic memory arena for Go, built with atomic pointers and `unsa
 go get github.com/Raezil/atomicarena
 ```
 
-> Replace `github.com/Raezil/atomicarena` with your module path.
-
 ## Usage
 
-Import the package and start allocating objects in your arena:
-
 ```go
 package main
 
@@ -30,73 +26,64 @@ import (
 )
 
 func main() {
-    // Create a new arena for ints
-    arena := &atomicarena.AtomicArena[int]{}
+    // Create an arena for 100 integers
+    arena := atomicarena.NewAtomicArena[int](100)
 
-    // Allocate some integers
-    ptr1, _ := arena.Alloc(100)
-    ptr2, _ := arena.Alloc(200)
+    // Allocate a value
+    ptr, err := arena.Alloc(42)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println("Allocated:", *ptr)
 
-    fmt.Println(*ptr1) // 100
-    fmt.Println(*ptr2) // 200
-
-    // Check total bytes allocated
-    fmt.Printf("Total bytes: %d\n", arena.offset)
-
-    // Reset the arena for reuse
+    // Reset to reuse all slots
     arena.Reset()
-    fmt.Println("After reset, offset:", arena.offset)
 }
 ```
 
-For composite or custom types:
+## API
+
+### `NewAtomicArena[T any](maxElems uintptr) *AtomicArena[T]`
+Creates a new arena capable of holding up to `maxElems` values of type `T`.
+
+### `(a *AtomicArena[T]) Alloc(obj T) (*T, error)`
+Atomically reserves a slot and stores `obj`. Returns an error if capacity is exhausted.
+
+### `(a *AtomicArena[T]) Reset()`
+Clears all allocations, setting the element count back to zero.
+
+## Example: Structs
 
 ```go
-package main
+// Define a struct
+ type Point struct { X, Y float64 }
 
-import (
-    "fmt"
-    "github.com/Raezil/atomicarena"
-)
+// Arena for 10 points
+a := atomicarena.NewAtomicArena[Point](10)
 
-type Point struct { X, Y float64 }
+// Allocate two points
+p1, _ := a.Alloc(Point{1, 2})
+p2, _ := a.Alloc(Point{3, 4})
 
-func main() {
-    arena := &atomicarena.AtomicArena[Point]{}
-    p, _ := arena.Alloc(Point{X: 1.5, Y: 3.7})
-    fmt.Printf("Allocated point: %+v\n", *p)
-}
+fmt.Println(*p1, *p2)
 ```
 
-## API Reference
+## Testing
 
-```go
-// AtomicArena is a generic memory arena for type T.
-type AtomicArena[T any] struct {
-    buff   []atomic.Pointer[T] // underlying slice of pointers
-    offset uintptr             // total bytes allocated
-}
+A comprehensive test suite covers:
 
-// Alloc stores a copy of obj in the arena and returns its pointer.
-// Currently always returns a nil error.
-func (mem *AtomicArena[T]) Alloc(obj T) (*T, error)
+- Allocating basic types (`int`, `string`, etc.) and structs
+- Error on exceeding `maxElems`
+- `Reset()` correctness
+- High-concurrency allocations (data-race free)
 
-// Reset clears all stored pointers and resets the offset to zero.
-func (mem *AtomicArena[T]) Reset()
-```
-
-## Running Tests & Benchmarks
+Run tests with:
 
 ```bash
-go test -v ./atomicarena
-go test -bench=. ./atomicarena
+go test --bench=. --cover --race
 ```
 
-## Next Steps & Ideas 🚀
+## License
 
-- **Pooling**: Integrate an object pool to reuse memory slots and reduce GC pressure.
-- **Concurrent benchmarks**: Add `b.RunParallel` benches to measure real-world concurrent allocation performance.
-- **GC impact**: Track GC metrics (pause times, collections) to validate arena benefits.
-
-Enjoy exploring atomicarena! Contributions and feedback are welcome. Pull requests are always appreciated ❤️
+MIT © Raezil
 
