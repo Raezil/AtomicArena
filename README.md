@@ -98,3 +98,4 @@ Run tests with:
 go test --bench=. --cover --race
 ```
 
+![Screenshot from 2025-04-28 14-55-38](https://github.com/user-attachments/assets/23117af9-26ad-4ba9-ac0f-6deb83777f3f)
