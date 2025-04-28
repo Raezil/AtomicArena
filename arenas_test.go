@@ -2,7 +2,9 @@ package atomicarena
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
+	"unsafe"
 )
 
 // TestAllocInt ensures Alloc succeeds when within capacity for int
@@ -70,5 +72,64 @@ func TestConcurrentAlloc(t *testing.T) {
 	_, err := arena.Alloc(99)
 	if err == nil {
 		t.Fatal("expected error after capacity reached, got none")
+	}
+}
+
+// benchSizes defines total buffer sizes from 100 B up to 100 MB
+var benchSizes = []struct {
+	name       string
+	totalBytes uintptr
+}{
+	{"100B", 100},
+	{"1KB", 1 << 10},
+	{"10KB", 10 << 10},
+	{"100KB", 100 << 10},
+	{"1MB", 1 << 20},
+	{"10MB", 10 << 20},
+	{"100MB", 100 << 20},
+}
+
+// BenchmarkReset measures the cost of Reset() for arenas of different buffer sizes.
+func BenchmarkReset(b *testing.B) {
+	for _, s := range benchSizes {
+		s := s
+		b.Run(s.name, func(b *testing.B) {
+			// Each atomic.Pointer[T] is the size of an unsafe.Pointer
+			pointerSize := unsafe.Sizeof(atomic.Pointer[struct{}]{})
+			maxElems := s.totalBytes / pointerSize
+			arena := NewAtomicArena[struct{}](maxElems)
+
+			// Prefill all slots so Reset has to clear them
+			for i := uintptr(0); i < maxElems; i++ {
+				arena.Alloc(struct{}{})
+			}
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				arena.Reset()
+			}
+		})
+	}
+}
+
+// BenchmarkAlloc measures Alloc() throughput, resetting when full.
+func BenchmarkAlloc(b *testing.B) {
+	for _, s := range benchSizes {
+		s := s
+		b.Run(s.name, func(b *testing.B) {
+			pointerSize := unsafe.Sizeof(atomic.Pointer[int]{})
+			maxElems := s.totalBytes / pointerSize
+			arena := NewAtomicArena[int](maxElems)
+
+			b.ResetTimer()
+			for i := 0; i < b.N; {
+				_, err := arena.Alloc(i)
+				if err != nil {
+					arena.Reset()
+					continue
+				}
+				i++
+			}
+		})
 	}
 }
