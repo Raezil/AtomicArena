@@ -47,16 +47,27 @@ func (a *AtomicArena[T]) Alloc(obj T) (*T, error) {
 
 // AppendSlice atomically allocates a slice of objs within the arena. It returns a slice of pointers to the allocated objects.
 // If there is not enough space to allocate all objs (maxElems exceeded), it returns an error without modifying the arena.
+// This version properly handles allocation after Reset() by always creating fresh objects.
 func (a *AtomicArena[T]) AppendSlice(objs []T) ([]*T, error) {
 	n := uintptr(len(objs))
+	if n == 0 {
+		return nil, nil
+	}
+
+	// Reserve the necessary space atomically
 	for {
 		old := a.count.Load()
-		if old+n > a.maxElems {
+		newCount := old + n
+
+		if newCount > a.maxElems {
 			return nil, fmt.Errorf("arena full: cannot append slice of size %d, max elements %d exceeded", n, a.maxElems)
 		}
-		if a.count.CompareAndSwap(old, old+n) {
+
+		if a.count.CompareAndSwap(old, newCount) {
+			// Allocation successful, now populate the arena
 			ptrs := make([]*T, len(objs))
 			for i, obj := range objs {
+				// Always create new objects for each allocation
 				ptr := new(T)
 				*ptr = obj
 				a.buff[old+uintptr(i)].Store(ptr)
@@ -64,6 +75,7 @@ func (a *AtomicArena[T]) AppendSlice(objs []T) ([]*T, error) {
 			}
 			return ptrs, nil
 		}
+		// CAS failed, another thread changed the count, retry
 	}
 }
 
