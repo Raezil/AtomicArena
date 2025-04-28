@@ -1,6 +1,8 @@
 package atomicarena
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"unsafe"
 )
@@ -135,5 +137,64 @@ func BenchmarkNewHugeArray(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		ptr := new(HugeArray)
 		_ = ptr
+	}
+}
+
+// Test that Alloc succeeds when within capacity
+func TestAllocWithinCapacity(t *testing.T) {
+	// Use an arena with capacity for exactly one int
+	arena := NewAtomicArena[int](unsafe.Sizeof(int(0)))
+	val, err := arena.Alloc(100)
+	if err != nil {
+		t.Fatalf("unexpected error on first alloc: %v", err)
+	}
+	if *val != 100 {
+		t.Errorf("expected allocated value 100, got %d", *val)
+	}
+}
+
+// Test that Alloc returns error when exceeding capacity
+func TestAllocExceedCapacity(t *testing.T) {
+	// Capacity only enough for one int
+	arena := NewAtomicArena[int](unsafe.Sizeof(int(0)))
+	_, err := arena.Alloc(1)
+	if err != nil {
+		t.Fatalf("unexpected error on first alloc: %v", err)
+	}
+	// Second allocation should fail
+	_, err = arena.Alloc(2)
+	if err == nil {
+		t.Fatal("expected error when arena is full, got none")
+	}
+	// Ensure error message mentions capacity and request size
+	msg := err.Error()
+	expected := fmt.Sprintf("arena full: capacity %d bytes exceeded by request of %d bytes", arena.capacity, unsafe.Sizeof(int(0)))
+	if msg != expected {
+		t.Errorf("unexpected error message: got %q, want %q", msg, expected)
+	}
+}
+
+// Test concurrent usage
+func TestConcurrentAlloc(t *testing.T) {
+	arena := NewAtomicArena[int](unsafe.Sizeof(int(0)) * 10)
+	count := 10
+
+	var wg sync.WaitGroup
+	wg.Add(count)
+	for i := 0; i < count; i++ {
+		go func(i int) {
+			defer wg.Done()
+			_, err := arena.Alloc(i)
+			if err != nil {
+				t.Errorf("unexpected error on alloc %d: %v", i, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	// After 10 allocs, further alloc should fail
+	_, err := arena.Alloc(99)
+	if err == nil {
+		t.Fatal("expected error after concurrent allocs exceed capacity, got none")
 	}
 }
