@@ -1,6 +1,7 @@
 package atomicarena
 
 import (
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -175,5 +176,77 @@ func BenchmarkAppendSlice(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		arena.Reset()
 		_, _ = arena.AppendSlice(objs)
+	}
+}
+
+// nativeBenchSizes lists the target allocation sizes from 100 B up to 100 MB.
+var nativeBenchSizes = []struct {
+	name string
+	size int
+}{
+	{"100B", 100},
+	{"1KB", 1 << 10},
+	{"10KB", 10 << 10},
+	{"100KB", 100 << 10},
+	{"1MB", 1 << 20},
+	{"10MB", 10 << 20},
+	{"100MB", 100 << 20},
+}
+
+// BenchmarkNativeMake measures the cost of allocating a []byte of various sizes via make.
+func BenchmarkNativeMake(b *testing.B) {
+	for _, s := range nativeBenchSizes {
+		s := s
+		b.Run(s.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = make([]byte, s.size)
+			}
+		})
+	}
+}
+
+// Define fixed-size array types so we can use new() for each target size.
+type (
+	buf100B  [100]byte
+	buf1KB   [1 << 10]byte
+	buf10KB  [10 << 10]byte
+	buf100KB [100 << 10]byte
+	buf1MB   [1 << 20]byte
+	buf10MB  [10 << 20]byte
+	buf100MB [100 << 20]byte
+)
+
+// bufAllocFuncs maps each size to a function that calls new() on the corresponding array type.
+var bufAllocFuncs = []struct {
+	name  string
+	alloc func() interface{}
+}{
+	{"100B", func() interface{} { return new(buf100B) }},
+	{"1KB", func() interface{} { return new(buf1KB) }},
+	{"10KB", func() interface{} { return new(buf10KB) }},
+	{"100KB", func() interface{} { return new(buf100KB) }},
+	{"1MB", func() interface{} { return new(buf1MB) }},
+	{"10MB", func() interface{} { return new(buf10MB) }},
+	{"100MB", func() interface{} { return new(buf100MB) }},
+}
+
+// BenchmarkNativeNew measures the cost of allocating a fixed-size array via new().
+// BenchmarkNativeNew measures the cost of allocating a fixed-size array via new().
+func BenchmarkNativeNew(b *testing.B) {
+	var sink interface{}
+	for _, entry := range bufAllocFuncs {
+		entry := entry
+		b.Run(entry.name, func(b *testing.B) {
+			b.ResetTimer()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				// Store the result to prevent optimization
+				sink = entry.alloc()
+			}
+			// Use sink in some way to prevent the compiler from optimizing it away
+			runtime.KeepAlive(sink)
+		})
 	}
 }
