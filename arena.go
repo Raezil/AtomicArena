@@ -79,30 +79,24 @@ func (a *AtomicArena[T]) AppendSlice(objs []T) ([]*T, error) {
 	}
 }
 
+//go:linkname memclrNoHeapPointers runtime.memclrNoHeapPointers
+//go:nosplit
+func memclrNoHeapPointers(ptr unsafe.Pointer, n uintptr)
+
 // Reset clears all allocations in the arena, allowing reuse.
 // It resets the allocation count first to prevent readers from accessing stale pointers.
 // Reset clears all allocations in the arena, allowing reuse.
 // It resets the allocation count and zeroes out all allocated memory.
+// Reset clears the arena by zeroing memory without heap pointers, then resets the counter.
+// It uses memclrNoHeapPointers for efficient bulk zeroing.
 func (a *AtomicArena[T]) Reset() {
-	// Get the current count before resetting
 	oldCount := a.count.Load()
-
-	// Zero out all allocated memory before resetting count
-	// This ensures existing pointers will point to zeroed memory
-	for i := uintptr(0); i < oldCount; i++ {
-		ptr := a.buff[i].Load()
-		if ptr != nil {
-			// Zero out the memory by creating a zero value of T
-			var zero T
-			*ptr = zero
-		}
+	if oldCount > 0 {
+		// Calculate memory region for current values
+		ptr := unsafe.Pointer(&a.buff[0])
+		size := unsafe.Sizeof(a.buff[0])
+		memclrNoHeapPointers(ptr, oldCount*size)
 	}
-
-	// Now reset count and clear stored pointers
+	// Reset count to allow reuse
 	a.count.Store(0)
-
-	// Clear stored pointers
-	for i := uintptr(0); i < a.maxElems; i++ {
-		a.buff[i].Store(nil)
-	}
 }

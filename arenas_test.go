@@ -313,3 +313,29 @@ func FuzzAllocByte(f *testing.F) {
 		}
 	})
 }
+
+// TestResetClearsValues verifies that Reset zeroes stored values in the arena
+func TestResetClearsValues(t *testing.T) {
+	// Create an arena and populate with known values
+	arena := NewAtomicArena[int](3)
+	ptrs, err := arena.AppendSlice([]int{10, 20, 30})
+	if err != nil {
+		t.Fatalf("AppendSlice failed: %v", err)
+	}
+	// Confirm values before reset
+	for i, v := range []int{10, 20, 30} {
+		if *ptrs[i] != v {
+			t.Fatalf("expected %d at index %d before reset, got %d", v, i, *ptrs[i])
+		}
+	}
+
+	// Reset the arena
+	arena.Reset()
+
+	// After reset, underlying storage should be zeroed
+	for i := uintptr(0); i < 3; i++ {
+		if arena.buff[i].Load() != nil {
+			t.Errorf("value at index %d not zero after reset: got %v", i, arena.buff[i])
+		}
+	}
+}
