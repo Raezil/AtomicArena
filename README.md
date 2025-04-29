@@ -101,5 +101,5 @@ Run tests with:
 ```bash
 go test --bench=. --cover --race
 ```
+![Screenshot from 2025-04-29 13-51-32](https://github.com/user-attachments/assets/6cc91708-68af-482d-817c-7189f36c43c5)
 
-![Screenshot from 2025-04-28 14-55-38](https://github.com/user-attachments/assets/23117af9-26ad-4ba9-ac0f-6deb83777f3f)
