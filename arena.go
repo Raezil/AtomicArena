@@ -1,6 +1,7 @@
 package atomicarena
 
 import (
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"unsafe"
@@ -44,28 +45,36 @@ func (a *AtomicArena[T]) Alloc(obj T) (*T, error) {
 	return &a.raw[idx], nil
 }
 
-// AppendSlice reserves n slots in one atomic.Add and fills them with objs.
-// Returns slice of pointers to the stored objects, or error if not enough space.
-func (a *AtomicArena[T]) AppendSlice(objs []T) ([]*T, error) {
-	n := uintptr(len(objs))
+var ErrArenaFull = errors.New("atomicarena: arena full")
+
+// Reserve atomically reserves n slots and returns a slice view of length n.
+// Caller may write directly into the returned slice. No copying of data is performed.
+func (a *AtomicArena[T]) Reserve(n uintptr) ([]T, error) {
 	if n == 0 {
-		return nil, nil
+		return a.raw[:0], nil
 	}
-	// Bulk reserve
 	start := a.count.Add(n) - n
 	if start+n > a.maxElems {
-		// revert reservation
-		a.count.Add(^uintptr(n - 1))
-		return nil, fmt.Errorf("arena full: cannot append slice of size %d, max elements %d exceeded", n, a.maxElems)
+		// rollback
+		a.count.Add(^uintptr(n) + 1)
+		return nil, ErrArenaFull
 	}
-	// fill and publish
-	ptrs := make([]*T, len(objs))
-	for i, obj := range objs {
-		a.raw[start+uintptr(i)] = obj
-		a.ptrs[start+uintptr(i)].Store(&a.raw[start+uintptr(i)])
-		ptrs[i] = &a.raw[start+uintptr(i)]
+	return a.raw[start : start+n], nil
+}
+
+// AppendSlice is now an alias for Reserve: it performs only an atomic reservation
+// and returns a slice segment of length len(objs). No copy is done.
+// To fill the arena, copy into the returned slice manually.
+func (a *AtomicArena[T]) AppendSlice(objs []T) ([]T, error) {
+	n := uintptr(len(objs))
+	// Reserve raw slots
+	seg, err := a.Reserve(n)
+	if err != nil {
+		return nil, err
 	}
-	return ptrs, nil
+	// Copy input values into reserved segment
+	copy(seg, objs)
+	return seg, nil
 }
 
 //go:linkname memclrNoHeapPointers runtime.memclrNoHeapPointers

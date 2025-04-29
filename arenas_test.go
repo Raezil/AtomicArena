@@ -146,8 +146,8 @@ func TestAppendSlice(t *testing.T) {
 		t.Fatalf("Expected %v pointers, got %v", len(objs), len(ptrs))
 	}
 	for i, ptr := range ptrs {
-		if *ptr != objs[i] {
-			t.Errorf("Expected %v, got %v", objs[i], *ptr)
+		if ptr != objs[i] {
+			t.Errorf("Expected %v, got %v", objs[i], ptr)
 		}
 	}
 
@@ -155,8 +155,8 @@ func TestAppendSlice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AppendSlice2 failed: %v", err)
 	}
-	if *ptrs2[0] != 4 || *ptrs2[1] != 5 {
-		t.Errorf("Expected 4,5 got %v,%v", *ptrs2[0], *ptrs2[1])
+	if ptrs2[0] != 4 || ptrs2[1] != 5 {
+		t.Errorf("Expected 4,5 got %v,%v", ptrs2[0], ptrs2[1])
 	}
 
 	_, err = arena.AppendSlice([]int{6})
@@ -268,8 +268,8 @@ func FuzzAppendByteSlice(f *testing.F) {
 			t.Fatalf("Expected %d pointers, got %d", len(data), len(ptrs))
 		}
 		for i, b := range data {
-			if *ptrs[i] != b {
-				t.Errorf("Index %d: expected %v, got %v", i, b, *ptrs[i])
+			if ptrs[i] != b {
+				t.Errorf("Index %d: expected %v, got %v", i, b, ptrs[i])
 			}
 		}
 
@@ -280,8 +280,8 @@ func FuzzAppendByteSlice(f *testing.F) {
 			t.Fatalf("AppendSlice after Reset returned error: %v", err2)
 		}
 		for i, b := range data {
-			if *ptrs2[i] != b {
-				t.Errorf("After Reset index %d: expected %v, got %v", i, b, *ptrs2[i])
+			if ptrs2[i] != b {
+				t.Errorf("After Reset index %d: expected %v, got %v", i, b, ptrs2[i])
 			}
 		}
 	})
@@ -324,8 +324,8 @@ func TestResetClearsValues(t *testing.T) {
 	}
 	// Confirm values before reset
 	for i, v := range []int{10, 20, 30} {
-		if *ptrs[i] != v {
-			t.Fatalf("expected %d at index %d before reset, got %d", v, i, *ptrs[i])
+		if ptrs[i] != v {
+			t.Fatalf("expected %d at index %d before reset, got %d", v, i, ptrs[i])
 		}
 	}
 
