@@ -3,6 +3,7 @@
 </p>
 
 # AtomicArena
+[![Go Report Card](https://goreportcard.com/badge/github.com/Raezil/atomicarena)](https://goreportcard.com/report/github.com/Raezil/atomicarena)
 
 `AtomicArena` is a lock-free, thread-safe generic arena allocator for Go. It provides a fixed-capacity container of atomic pointers, allowing you to allocate objects of any type **T** up to a maximum element count without locks or garbage collection overhead.
 
