@@ -339,3 +339,92 @@ func TestResetClearsValues(t *testing.T) {
 		}
 	}
 }
+
+// TestResetReadSafety spins up N readers that continuously Load() pointers
+// while Reset() is called once. We assert there are no panics or data races.
+// (Run with `-race` to catch any ordering bugs.)
+func TestResetReadSafety(t *testing.T) {
+	const N = 1_000
+	arena := NewAtomicArena[int](N)
+
+	// Pre-fill
+	vals := make([]int, N)
+	for i := range vals {
+		vals[i] = i
+	}
+	ptrs, err := arena.AppendSlice(vals)
+	if err != nil {
+		t.Fatalf("setup AppendSlice failed: %v", err)
+	}
+
+	// Start readers
+	var stop uint32
+	var wg sync.WaitGroup
+	reader := func() {
+		defer wg.Done()
+		for atomic.LoadUint32(&stop) == 0 {
+			for i := 0; i < N; i++ {
+				_ = ptrs[i] // reading the pointer value (could be old or nil)
+			}
+			runtime.Gosched()
+		}
+	}
+
+	numReaders := runtime.GOMAXPROCS(0)
+	wg.Add(numReaders)
+	for i := 0; i < numReaders; i++ {
+		go reader()
+	}
+
+	// Now Reset once
+	arena.Reset()
+	atomic.StoreUint32(&stop, 1)
+	wg.Wait()
+	// If we reach here without panic or race, the memory ordering holds under contention.
+}
+
+// BenchmarkResetWithReaders measures how many Resets/sec you can do
+// while N goroutines are hammering Load().
+func BenchmarkResetWithReaders(b *testing.B) {
+	const N = 10_000
+	arena := NewAtomicArena[int](N)
+	// Pre-fill
+	vals := make([]int, N)
+	for i := range vals {
+		vals[i] = i
+	}
+	_, _ = arena.AppendSlice(vals)
+
+	// Launch readers
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	reader := func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				for i := 0; i < N; i++ {
+					_ = arena.ptrs[i].Load()
+				}
+				runtime.Gosched()
+			}
+		}
+	}
+
+	numReaders := runtime.GOMAXPROCS(0)
+	wg.Add(numReaders)
+	for i := 0; i < numReaders; i++ {
+		go reader()
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		arena.Reset()
+	}
+	b.StopTimer()
+
+	close(stop)
+	wg.Wait()
+}
