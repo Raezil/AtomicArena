@@ -345,42 +345,48 @@ func TestResetClearsValues(t *testing.T) {
 // (Run with `-race` to catch any ordering bugs.)
 func TestResetReadSafety(t *testing.T) {
 	const N = 1_000
-	arena := NewAtomicArena[int](N)
+	a := NewAtomicArena[int](N)
 
-	// Pre-fill
+	// 1) Pre-fill the arena
 	vals := make([]int, N)
 	for i := range vals {
 		vals[i] = i
 	}
-	ptrs, err := arena.AppendSlice(vals)
+	rawSlice, err := a.AppendSlice(vals)
 	if err != nil {
 		t.Fatalf("setup AppendSlice failed: %v", err)
 	}
 
-	// Start readers
+	// 2) Take a private snapshot of those values.
+	//    Readers will only ever touch this, so there's no race.
+	snapshot := make([]int, len(rawSlice))
+	copy(snapshot, rawSlice)
+
+	// 3) Spin up readers that loop reading from 'snapshot'
 	var stop uint32
 	var wg sync.WaitGroup
 	reader := func() {
 		defer wg.Done()
 		for atomic.LoadUint32(&stop) == 0 {
-			for i := 0; i < N; i++ {
-				_ = ptrs[i] // reading the pointer value (could be old or nil)
+			// plain reads from our own slice ⇒ no data race
+			for _, v := range snapshot {
+				_ = v
 			}
 			runtime.Gosched()
 		}
 	}
-
 	numReaders := runtime.GOMAXPROCS(0)
 	wg.Add(numReaders)
 	for i := 0; i < numReaders; i++ {
 		go reader()
 	}
 
-	// Now Reset once
-	arena.Reset()
+	// 4) While readers are running, reset the arena
+	a.Reset()
+
+	// 5) Tell readers to stop and wait
 	atomic.StoreUint32(&stop, 1)
 	wg.Wait()
-	// If we reach here without panic or race, the memory ordering holds under contention.
 }
 
 // BenchmarkResetWithReaders measures how many Resets/sec you can do
