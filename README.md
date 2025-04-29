@@ -103,3 +103,5 @@ go test --bench=. --cover --race
 ```
 
 ![Screenshot from 2025-04-29 17-34-57](https://github.com/user-attachments/assets/9d263d80-8519-4118-be5d-1e7a53828f59)
+![output](https://github.com/user-attachments/assets/9fee7895-bd30-40b3-be3a-6af614c341e9)
+
