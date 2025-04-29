@@ -88,6 +88,7 @@ var benchSizes = []struct {
 	{"1MB", 1 << 20},
 	{"10MB", 10 << 20},
 	{"100MB", 100 << 20},
+	{"1GB", 1 << 30},
 }
 
 // BenchmarkReset measures the cost of Reset() for arenas of different buffer sizes.
@@ -191,6 +192,7 @@ var nativeBenchSizes = []struct {
 	{"1MB", 1 << 20},
 	{"10MB", 10 << 20},
 	{"100MB", 100 << 20},
+	{"1GB", 1 << 30},
 }
 
 // BenchmarkNativeMake measures the cost of allocating a []byte of various sizes via make.
@@ -216,6 +218,7 @@ type (
 	buf1MB   [1 << 20]byte
 	buf10MB  [10 << 20]byte
 	buf100MB [100 << 20]byte
+	buf1GB   [1 << 30]byte
 )
 
 // bufAllocFuncs maps each size to a function that calls new() on the corresponding array type.
@@ -230,6 +233,7 @@ var bufAllocFuncs = []struct {
 	{"1MB", func() interface{} { return new(buf1MB) }},
 	{"10MB", func() interface{} { return new(buf10MB) }},
 	{"100MB", func() interface{} { return new(buf100MB) }},
+	{"1GB", func() interface{} { return new(buf1GB) }},
 }
 
 // BenchmarkNativeNew measures the cost of allocating a fixed-size array via new().
