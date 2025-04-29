@@ -334,8 +334,8 @@ func TestResetClearsValues(t *testing.T) {
 
 	// After reset, underlying storage should be zeroed
 	for i := uintptr(0); i < 3; i++ {
-		if arena.buff[i].Load() != nil {
-			t.Errorf("value at index %d not zero after reset: got %v", i, arena.buff[i])
+		if arena.ptrs[i].Load() != nil {
+			t.Errorf("value at index %d not zero after reset: got %v", i, arena.ptrs[i])
 		}
 	}
 }
