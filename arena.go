@@ -77,11 +77,16 @@ func memclrNoHeapPointers(ptr unsafe.Pointer, n uintptr)
 func (a *AtomicArena[T]) Reset() {
 	old := a.count.Load()
 	if old > 0 {
-		// zero out published pointers
+		// clear published pointers
 		ptr := unsafe.Pointer(&a.ptrs[0])
 		sz := unsafe.Sizeof(a.ptrs[0])
 		memclrNoHeapPointers(ptr, old*sz)
+
+		// **also** zero out raw storage:
+		var zero T
+		for i := uintptr(0); i < old; i++ {
+			a.raw[i] = zero
+		}
 	}
-	// allow reuse
 	a.count.Store(0)
 }
