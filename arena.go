@@ -83,8 +83,10 @@ func memclrNoHeapPointers(ptr unsafe.Pointer, n uintptr)
 
 // Reset clears all published pointers, allowing reuse of the arena.
 // It zeroes the ptrs slice via memclrNoHeapPointers and resets the allocation count.
-func (a *AtomicArena[T]) Reset() {
-	a.Free()
+func (a *AtomicArena[T]) Reset(release bool) {
+	if release {
+		a.Free()
+	}
 	a.count.Store(0)
 }
 

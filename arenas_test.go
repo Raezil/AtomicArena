@@ -44,7 +44,7 @@ func TestReset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initial alloc failed: %v", err)
 	}
-	arena.Reset()
+	arena.Reset(true)
 	// After reset, should be able to alloc again
 	_, err = arena.Alloc(8)
 	if err != nil {
@@ -108,7 +108,7 @@ func BenchmarkReset(b *testing.B) {
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				arena.Reset()
+				arena.Reset(true)
 			}
 		})
 	}
@@ -127,7 +127,7 @@ func BenchmarkAlloc(b *testing.B) {
 			for i := 0; i < b.N; {
 				_, err := arena.Alloc(i)
 				if err != nil {
-					arena.Reset()
+					arena.Reset(true)
 					continue
 				}
 				i++
@@ -175,7 +175,7 @@ func BenchmarkAppendSlice(b *testing.B) {
 	arena := NewAtomicArena[int](size)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		arena.Reset()
+		arena.Reset(true)
 		_, _ = arena.AppendSlice(objs)
 	}
 }
@@ -278,7 +278,7 @@ func FuzzAppendByteSlice(f *testing.F) {
 		}
 
 		// Test after reset
-		arena.Reset()
+		arena.Reset(true)
 		ptrs2, err2 := arena.AppendSlice(data)
 		if err2 != nil {
 			t.Fatalf("AppendSlice after Reset returned error: %v", err2)
@@ -334,7 +334,7 @@ func TestResetClearsValues(t *testing.T) {
 	}
 
 	// Reset the arena
-	arena.Reset()
+	arena.Reset(true)
 
 	// After reset, underlying storage should be zeroed
 	for i := uintptr(0); i < 3; i++ {
@@ -386,7 +386,7 @@ func TestResetReadSafety(t *testing.T) {
 	}
 
 	// 4) While readers are running, reset the arena
-	a.Reset()
+	a.Reset(true)
 
 	// 5) Tell readers to stop and wait
 	atomic.StoreUint32(&stop, 1)
@@ -431,7 +431,7 @@ func BenchmarkResetWithReaders(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		arena.Reset()
+		arena.Reset(true)
 	}
 	b.StopTimer()
 

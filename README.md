@@ -64,8 +64,9 @@ Atomically reserves a slot and stores `obj`. Returns an error if capacity is exh
 ### `(a *AtomicArena[T]) AppendSlice(objs []T) ([]*T, error)`
 Atomically reserves slots for each element in `objs`, storing them in the arena. Returns a slice of pointers to the stored values in the same order. If there is insufficient capacity to store all elements, no values are stored and an error is returned.
 
-### `(a *AtomicArena[T]) Reset()`
+### `(a *AtomicArena[T]) Reset(release bool)`
 Clears all allocations, setting the element count back to zero.
+If release is true, Reset additionally zeroes out the raw storage (memset-style) before resetting the count and pointers.
 
 ## Example: Structs
 
