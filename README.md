@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/f7f9c72f-5965-4517-b9d3-0830c98d073b">
-</p>
-
 # AtomicArena
 [![Go Report Card](https://goreportcard.com/badge/github.com/Raezil/atomicarena)](https://goreportcard.com/report/github.com/Raezil/atomicarena)
 
